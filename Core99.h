@@ -57,10 +57,10 @@ private:
   IOService * usb2;
   IOService * keylargoUSB1;
   IOService * keylargoUSB2;
+  class IOPMPagingPlexus * plexus;
   class IOPMSlots99 * slots99;
   IOLock    * mutex;
-  bool		isPortable;
-  
+
   virtual unsigned long readUniNReg(unsigned long offest);
   virtual void writeUniNReg(unsigned long offest, unsigned long data);
   

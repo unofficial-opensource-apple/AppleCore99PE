@@ -26,12 +26,9 @@
  *
  */
 
-#include <sys/cdefs.h>
-
-__BEGIN_DECLS
+extern "C" {
 #include <ppc/proc_reg.h>
-__END_DECLS
-
+}
 
 #include <IOKit/IODeviceTreeSupport.h>
 #include <IOKit/IOPlatformExpert.h>
@@ -64,121 +61,97 @@ bool Core99CPU::start(IOService *provider)
   UInt32               maxCPUs, uniNVersion, physCPU;
   ml_processor_info_t  processor_info;
 
-  core99PE = OSDynamicCast(Core99PE, getPlatform());
-  if (core99PE == 0)
-    return false;
-
   // callPlatformFunction symbols
-  mpic_getProvider              = OSSymbol::withCString( "mpic_getProvider"              );
-  mpic_getIPIVector             = OSSymbol::withCString( "mpic_getIPIVector"             );
-  mpic_setCurrentTaskPriority   = OSSymbol::withCString( "mpic_setCurrentTaskPriority"   );
-  mpic_setUpForSleep            = OSSymbol::withCString( "mpic_setUpForSleep"            );
-  mpic_dispatchIPI              = OSSymbol::withCString( "mpic_dispatchIPI"              );
-  keyLargo_restoreRegisterState = OSSymbol::withCString( "keyLargo_restoreRegisterState" );
-  keyLargo_syncTimeBase         = OSSymbol::withCString( "keyLargo_syncTimeBase"         );
-  keyLargo_saveRegisterState    = OSSymbol::withCString( "keyLargo_saveRegisterState"    );
-  keyLargo_turnOffIO            = OSSymbol::withCString( "keyLargo_turnOffIO"            );
-  keyLargo_writeRegUInt8        = OSSymbol::withCString( "keyLargo_writeRegUInt8"        );
+  mpic_getProvider = OSSymbol::withCString("mpic_getProvider");
+  mpic_getIPIVector= OSSymbol::withCString("mpic_getIPIVector");
+  mpic_setCurrentTaskPriority = OSSymbol::withCString("mpic_setCurrentTaskPriority");
+  mpic_setUpForSleep = OSSymbol::withCString("mpic_setUpForSleep");
+  mpic_dispatchIPI = OSSymbol::withCString("mpic_dispatchIPI");
+  keyLargo_restoreRegisterState = OSSymbol::withCString("keyLargo_restoreRegisterState");
+  keyLargo_syncTimeBase = OSSymbol::withCString("keyLargo_syncTimeBase");
+  keyLargo_saveRegisterState = OSSymbol::withCString("keyLargo_saveRegisterState");
+  keyLargo_turnOffIO = OSSymbol::withCString("keyLargo_turnOffIO");
+  keyLargo_writeRegUInt8 = OSSymbol::withCString("keyLargo_writeRegUInt8");
+  
+  core99PE = OSDynamicCast(Core99PE, getPlatform());
+  if (core99PE == 0) return false;
   
   if (!super::start(provider)) return false;
   
   // Get the Uni-N Version.
   uniNRegEntry = fromPath("/uni-n", gIODTPlane);
-  if (uniNRegEntry == 0)
-	return false;
+  if (uniNRegEntry == 0) return false;
   tmpData = OSDynamicCast(OSData, uniNRegEntry->getProperty("device-rev"));
-  if (tmpData == 0)
-	return false;
+  if (tmpData == 0) return false;
   uniNVersion = *(long *)tmpData->getBytesNoCopy();
   
   // Count the CPUs.
   numCPUs = 0;
   cpusRegEntry = fromPath("/cpus", gIODTPlane);
-  if (cpusRegEntry == 0)
-	return false;
+  if (cpusRegEntry == 0) return false;
   cpusIterator = cpusRegEntry->getChildIterator(gIODTPlane);
-  while (cpusIterator->getNextObject())
-	numCPUs++;
+  while (cpusIterator->getNextObject()) numCPUs++;
   cpusIterator->release();
   
   // Limit the number of CPUs to one if uniNVersion is 1.0.7 or less.
-  if (uniNVersion < kUniNVersion107)
-	numCPUs = 1;
+  if (uniNVersion < kUniNVersion107) numCPUs = 1;
   
   // Limit the number of CPUs by the cpu=# boot arg.
-  if ( PE_parse_boot_arg("cpus", &maxCPUs) )
-  {
-    if (numCPUs > maxCPUs)
-	numCPUs = maxCPUs;
+  if (PE_parse_boot_arg("cpus", &maxCPUs)) {
+    if (numCPUs > maxCPUs) numCPUs = maxCPUs;
   }
   
   // Get the "flush-on-lock" property from the fisrt cpu node.
   flushOnLock = false;
   cpusRegEntry = fromPath("/cpus/@0", gIODTPlane);
-  if (cpusRegEntry == 0)
-	return false;
-  if (cpusRegEntry->getProperty("flush-on-lock") != 0)
-	flushOnLock = true;
+  if (cpusRegEntry == 0) return false;
+  if (cpusRegEntry->getProperty("flush-on-lock") != 0) flushOnLock = true;
   
   // Set flushOnLock when numCPUs is not one.
-  if (numCPUs != 1)
-	flushOnLock = true;
+  if (numCPUs != 1) flushOnLock = true;
   
   // Get the physical CPU number from the "reg" property.
   tmpData = OSDynamicCast(OSData, provider->getProperty("reg"));
-  if (tmpData == 0)
-	return false;
+  if (tmpData == 0) return false;
   physCPU = *(long *)tmpData->getBytesNoCopy();
   setCPUNumber(physCPU);
   
   // Find out if this is the boot CPU.
   bootCPU = false;
   tmpData = OSDynamicCast(OSData, provider->getProperty("state"));
-  if (tmpData == 0)
-	return false;
-  if (!strcmp((char *)tmpData->getBytesNoCopy(), "running"))
-	bootCPU = true;
+  if (tmpData == 0) return false;
+  if (!strcmp((char *)tmpData->getBytesNoCopy(), "running")) bootCPU = true;
   
-  if (bootCPU)
-  {
+  if (bootCPU) {
     gCPUIC = new IOCPUInterruptController;
-    if (gCPUIC == 0)
-	return false;
+    if (gCPUIC == 0) return false;
     if (gCPUIC->initCPUInterruptController(numCPUs) != kIOReturnSuccess)
-	return false;
+      return false;
     gCPUIC->attach(this);
     gCPUIC->registerCPUInterruptController();
   }
   
   // Get the l2cr value from the property list.
   tmpData = OSDynamicCast(OSData, provider->getProperty("l2cr"));
-  if (tmpData != 0)
-  {
+  if (tmpData != 0) {
     l2crValue = *(long *)tmpData->getBytesNoCopy() & 0x7FFFFFFF;
-  }
-  else
-  {
-#if !defined(__i386__)   
+  } else {
     l2crValue = mfl2cr() & 0x7FFFFFFF;
-#endif
   }
   
   // Wait for KeyLargo to show up.
   keyLargo = waitForService(serviceMatching("KeyLargo"));
-  if (keyLargo == 0)
-	return false;
+  if (keyLargo == 0) return false;
   
   // Wait for MPIC to show up.
   mpic = waitForService(serviceMatching("AppleMPICInterruptController"));
-  if (mpic == 0)
-	return false;
+  if (mpic == 0) return false;
   
   // Set the Interrupt Properties for this cpu.
   mpic->callPlatformFunction(mpic_getProvider, false, (void *)&mpicRegEntry, 0, 0, 0);
   interruptControllerName = IODTInterruptControllerName(mpicRegEntry);
   mpic->callPlatformFunction(mpic_getIPIVector, false, (void *)&physCPU, (void *)&interruptData, 0, 0);
-  if ((interruptControllerName == 0) || (interruptData == 0))
-	return false;
+  if ((interruptControllerName == 0) || (interruptData == 0)) return false;
   
   tmpArray = OSArray::withCapacity(1);
   tmpArray->setObject(interruptControllerName);
@@ -191,39 +164,35 @@ bool Core99CPU::start(IOService *provider)
   tmpArray->release();
   
   setCPUState(kIOCPUStateUninitalized);
- 
-  if (physCPU < numCPUs)
-  {
+  
+  if (physCPU < numCPUs) {
     processor_info.cpu_id           = (cpu_id_t)this;
     processor_info.boot_cpu         = bootCPU;
     processor_info.start_paddr      = 0x0100;
     processor_info.l2cr_value       = l2crValue;
     processor_info.supports_nap     = !flushOnLock;
-
-	processor_info.time_base_enable = OSMemberFunctionCast(time_base_enable_t, this, &Core99CPU::enableCPUTimeBase);	// [4091865]
-		
+    processor_info.time_base_enable =
+      (time_base_enable_t)&Core99CPU::enableCPUTimeBase;
+    
     // Register this CPU with mach.
-#if !defined(__i386__)
-    result = ml_processor_register(&processor_info, &machProcessor, &ipi_handler);
-	
-    if (result == KERN_FAILURE)
-		return false;
-#endif	
+    result = ml_processor_register(&processor_info, &machProcessor,
+				   &ipi_handler);
+    if (result == KERN_FAILURE) return false;
+    
     processor_start(machProcessor);
   }
- 
+
   // Before to go to sleep we wish to disable the napping mode so that the PMU
   // will not shutdown the system while going to sleep:
   service = waitForService(serviceMatching("IOPMrootDomain"));
   IOPMrootDomain *pmRootDomain = OSDynamicCast(IOPMrootDomain, service);
-  if (pmRootDomain != 0)
-  {
+  if (pmRootDomain != 0) {
       kprintf("Register Core99CPU %d to acknowledge power changes\n", getCPUNumber());
       pmRootDomain->registerInterestedDriver(this);
   }
- 
+  
   registerService();
-
+  
   return true;
 }
 
@@ -232,33 +201,22 @@ bool Core99CPU::start(IOService *provider)
 // re-enable it before to go up:
 IOReturn Core99CPU::powerStateWillChangeTo ( IOPMPowerFlags theFlags, unsigned long, IOService*)
 {
-    if ( ! (theFlags & IOPMPowerOn) )
-    {
+    if ( ! (theFlags & IOPMPowerOn) ) {
         // Sleep sequence:
-        kprintf("Core99CPU %d powerStateWillChangeTo to acknowledge power changes (DOWN) we set napping %d\n",
-			getCPUNumber(), false);
-        // Disable napping (the function returns the previous state)
-#if !defined(__i386__)
-        rememberNap = ml_enable_nap(getCPUNumber(), false);
-#endif
+        kprintf("Core99CPU %d powerStateWillChangeTo to acknowledge power changes (DOWN) we set napping %d\n", getCPUNumber(), false);
+        rememberNap = ml_enable_nap(getCPUNumber(), false);        // Disable napping (the function returns the previous state)
     }
-    else
-    {
+    else {
         // Wake sequence:
-        kprintf("Core99CPU %d powerStateWillChangeTo to acknowledge power changes (UP) we set napping %d\n",
-			getCPUNumber(), rememberNap);
-        // Re-set the nap as it was before.
-#if !defined(__i386__)
-        ml_enable_nap(getCPUNumber(), rememberNap);
-#endif
+        kprintf("Core99CPU %d powerStateWillChangeTo to acknowledge power changes (UP) we set napping %d\n", getCPUNumber(), rememberNap);
+        ml_enable_nap(getCPUNumber(), rememberNap); 		   // Re-set the nap as it was before.
     }
     return IOPMAckImplied;
 }
 
 void Core99CPU::initCPU(bool boot)
 {
-  if (!boot && bootCPU)
-  {
+  if (!boot && bootCPU) {
     // Tell Uni-N to enter normal mode.
     core99PE->writeUniNReg(kUniNPowerMngmnt, kUniNNormal);
     
@@ -271,8 +229,7 @@ void Core99CPU::initCPU(bool boot)
     keyLargo->callPlatformFunction(keyLargo_restoreRegisterState, false, 0, 0, 0, 0);
     
     if ((core99PE->getMachineType() == kCore99TypePowerMac3_1) ||
-        (core99PE->getMachineType() == kCore99TypePowerMac3_3))
-    {
+        (core99PE->getMachineType() == kCore99TypePowerMac3_3)) {
         // Disables the interrupts for this CPU.
         kprintf("Core99CPU::initCPU %d -> mpic->setUpForSleep on", getCPUNumber());
         mpic->callPlatformFunction(mpic_setUpForSleep, false, (void *)false, (void *)getCPUNumber(), 0, 0);
@@ -285,17 +242,15 @@ void Core99CPU::initCPU(bool boot)
   if (bootCPU)
         keyLargo->callPlatformFunction(keyLargo_syncTimeBase, false, 0, 0, 0, 0);
   
-  if (boot)
-  {
+  if (boot) {
   
     gCPUIC->enableCPUInterrupt(this);
     
     // Register and enable IPIs.
-	cpuNub->registerInterrupt(0, this, OSMemberFunctionCast(IOInterruptAction, this, &Core99CPU::ipiHandler), 0);	// [4091865]
+    cpuNub->registerInterrupt(0, this,
+			      (IOInterruptAction)&Core99CPU::ipiHandler, 0);
     cpuNub->enableInterrupt(0);
-  }
-  else
-  {
+  } else {
     long priority = 0;
     mpic->callPlatformFunction(mpic_setCurrentTaskPriority, false, (void *)&priority, 0, 0, 0);
   }
@@ -306,8 +261,7 @@ void Core99CPU::initCPU(bool boot)
 
 void Core99CPU::quiesceCPU(void)
 {
-    if (bootCPU)
-    {
+    if (bootCPU) {
         // Send PMU command to shutdown system before io is turned off
         if (pmu != 0)
             pmu->callPlatformFunction("sleepNow", false, 0, 0, 0, 0);
@@ -315,8 +269,7 @@ void Core99CPU::quiesceCPU(void)
             kprintf("Core99CPU::quiesceCPU can't find ApplePMU\n");
     
         if ((core99PE->getMachineType() == kCore99TypePowerMac3_1) ||
-            (core99PE->getMachineType() == kCore99TypePowerMac3_3))
-	{
+            (core99PE->getMachineType() == kCore99TypePowerMac3_3)) {
             // Disables the interrupts for this CPU.
             kprintf("Core99CPU::quiesceCPU %d -> mpic->setUpForSleep off", getCPUNumber());
             mpic->callPlatformFunction(mpic_setUpForSleep, false, (void *)true, (void *)getCPUNumber(), 0, 0);
@@ -339,28 +292,27 @@ void Core99CPU::quiesceCPU(void)
         // Tell Uni-N to enter sleep mode.
         core99PE->writeUniNReg(kUniNPowerMngmnt, kUniNSleep);
     }
-#if !defined(__i386__)
+
     ml_ppc_sleep();
-#endif
 }
 
-kern_return_t Core99CPU::startCPU(vm_offset_t /*start_paddr*/, vm_offset_t /*arg_paddr*/)
+kern_return_t Core99CPU::startCPU(vm_offset_t /*start_paddr*/,
+				  vm_offset_t /*arg_paddr*/)
 {
   long gpioOffset;
   
-  switch (getCPUNumber())
-  {
+  switch (getCPUNumber()) {
   case 0 : gpioOffset = 0x5B; break;
   case 1 : gpioOffset = 0x5C; break;
   case 2 : gpioOffset = 0x67; break;
   case 3 : gpioOffset = 0x68; break;
   default : return KERN_FAILURE;
   }
-
+  
   // Strobe the reset line for this CPU.
   keyLargo->callPlatformFunction(keyLargo_writeRegUInt8, false, (void *)&gpioOffset, (void *)4, 0, 0);
   keyLargo->callPlatformFunction(keyLargo_writeRegUInt8, false, (void *)&gpioOffset, (void *)5, 0, 0);
-
+  
   return KERN_SUCCESS;
 }
 
@@ -371,14 +323,12 @@ void Core99CPU::haltCPU(void)
   
   setCPUState(kIOCPUStateStopped);
   
-  if (bootCPU)
-  {
+  if (bootCPU) {
     // Find the DEC Bridge if it is there.
     decBridge = 0;
     decBridgeEntry = fromPath("/pci@f2000000/@d", gIODTPlane);
     decBridgeNub = OSDynamicCast(IOService, decBridgeEntry);
-    if (decBridgeNub != 0)
-    {
+    if (decBridgeNub != 0) {
       decBridge = OSDynamicCast(IOPCI2PCIBridge, decBridgeNub->getClient());
     }
   }
@@ -424,7 +374,7 @@ const OSSymbol *Core99CPU::getCPUName(void)
 {
   char tmpStr[256];
   
-  sprintf(tmpStr, "Primary%ld", getCPUNumber());
+  sprintf(tmpStr, "Primary%d", getCPUNumber());
   
   return OSSymbol::withCString(tmpStr);
 }

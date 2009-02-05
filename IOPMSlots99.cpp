@@ -28,6 +28,10 @@
 #include "IOKit/pwr_mgt/IOPM.h"
 #include "IOKit/pci/IOPCIDevice.h"
 
+extern "C" {
+extern void kprintf(const char *, ...);
+}
+
 bool auxDriverHasRoot( OSObject * us, void *, IOService * yourDevice );
 
 #define number_of_power_states 3
@@ -190,7 +194,7 @@ IOReturn IOPMSlots99::setPowerState ( unsigned long powerStateOrdinal, IOService
             iter->release();
         }
         if ( totalPower > auxCapacity ) {
-            IOLog("PCI sleep prevented by high-power expansion cards %ld %ld (4)\n",totalPower,auxCapacity);
+            IOLog("PCI sleep prevented by high-power expansion cards %d %d (4)\n",totalPower,auxCapacity);
             canSleep = false;
         }
         
