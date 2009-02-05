@@ -19,12 +19,10 @@
  * 
  * @APPLE_LICENSE_HEADER_END@
  */
+
+#include <IOKit/IOLib.h>
+
 #include "IOPMUSB99.h"
-
-extern "C" {
-extern void kprintf(const char *, ...);
-}
-
 
 #define number_of_power_states 3
 
@@ -64,34 +62,6 @@ bool IOPMUSB99::start ( IOService * nub )
 IOReturn IOPMUSB99::setPowerState ( long powerStateOrdinal, IOService* whatDevice)
 {
   return IOPMAckImplied;
-}
-
-
-// **********************************************************************************
-// maxCapabilityForDomainState
-//
-// this is incomplete pending completed design of root domain states
-// **********************************************************************************
-unsigned long IOPMUSB99::maxCapabilityForDomainState ( IOPMPowerFlags powerFlags)
-{
-    if ( powerFlags & IOPMPowerOn ) {
-        return  number_of_power_states-1;
-    }
-    return  0;
-}
-
-
-// **********************************************************************************
-// powerStateForDomainState
-//
-// this is incomplete pending completed design of root domain states
-// **********************************************************************************
-unsigned long IOPMUSB99::powerStateForDomainState ( IOPMPowerFlags powerFlags)
-{
-    if ( powerFlags & IOPMPowerOn ) {
-        return  number_of_power_states-1;
-    }
-    return  0;
 }
 
 
